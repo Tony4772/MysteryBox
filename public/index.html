@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MysteryBox - Abre Cajas, Consigue Leyendas</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div id="app">
+    <canvas id="particleCanvas"></canvas>
+    <div id="cinematicOverlay" class="cinematic-overlay"></div>
+
+    <nav id="navbar" class="navbar hidden">
+      <div class="nav-brand" onclick="navigate('boxes')">🎁 MysteryBox</div>
+      <div class="nav-links">
+        <a onclick="navigate('boxes')" class="nav-link active" data-page="boxes">Cajas</a>
+        <a onclick="navigate('inventory')" class="nav-link" data-page="inventory">Inventario</a>
+        <a onclick="navigate('wallet')" class="nav-link" data-page="wallet">Billetera</a>
+        <a onclick="navigate('admin')" class="nav-link admin-only hidden" data-page="admin">Admin</a>
+      </div>
+      <div class="nav-right">
+        <button class="audio-toggle" id="audioToggle" onclick="toggleAudio()" title="Toggle Sound">🔊</button>
+        <div class="credits-badge" id="creditsBadge" onclick="navigate('wallet')">
+          <span class="credits-icon">💎</span>
+          <span id="navCredits">0</span>
+        </div>
+        <div class="nav-user" id="navUser"></div>
+        <button class="btn btn-sm btn-ghost" onclick="logout()">Salir</button>
+      </div>
+    </nav>
+
+    <div id="landingPage"></div>
+
+    <main id="mainContent" class="hidden">
+      <div id="pageContent"></div>
+    </main>
+
+    <div id="modal" class="modal hidden">
+      <div class="modal-backdrop" onclick="closeModal()"></div>
+      <div class="modal-content" id="modalContent"></div>
+    </div>
+
+    <div id="toast" class="toast hidden"></div>
+  </div>
+
+  <script src="/js/audio.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
