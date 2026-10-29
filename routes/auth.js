@@ -2,6 +2,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { get, run } = require("../database/db");
+const { authMiddleware } = require("../middleware/auth");
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "change-this-to-a-strong-secret-key-in-production";
@@ -45,7 +46,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-router.get("/me", async (req, res) => {
+router.get("/me", authMiddleware, async (req, res) => {
   try {
     const user = await get("SELECT id, username, email, credits, role, created_at FROM users WHERE id = ?", [req.user.id]);
     if (!user) return res.status(404).json({ error: "Usuario no encontrado" });
