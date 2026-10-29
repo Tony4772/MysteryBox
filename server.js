@@ -20,7 +20,14 @@ async function start() {
 
   app.use(cors());
   app.use(express.json());
-  app.use(express.static(path.join(__dirname, "public")));
+  // Serve static files but never cache index.html so OG tags are always fresh
+  app.use(express.static(path.join(__dirname, "public"), {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith("index.html")) {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      }
+    }
+  }));
 
   // Public routes
   app.use("/api/auth", authRoutes);
@@ -43,6 +50,7 @@ async function start() {
   // SPA fallback
   app.get("*", (req, res) => {
     if (req.path.startsWith("/api/")) return res.status(404).json({ error: "API not found" });
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     res.sendFile(path.join(__dirname, "public", "index.html"));
   });
 
