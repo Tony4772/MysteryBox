@@ -72,15 +72,12 @@ class BoxDetailViewModel(
         }
 
         _state.value = current.copy(opening = true, message = null)
-        android.util.Log.d("BoxDetailVM", "open() start boxId=$boxId")
         viewModelScope.launch {
             delay(1200)
             boxRepository.open(boxId)
                 .onSuccess { result ->
-                    android.util.Log.d("BoxDetailVM", "open() success item=${result.item} newBalance=${result.newBalance}")
                     sessionRepository.updateCredits(result.newBalance)
                     _state.value = _state.value.copy(opening = false, reveal = result.item)
-                    android.util.Log.d("BoxDetailVM", "state after success reveal=${_state.value.reveal}")
                 }
                 .onFailure { error ->
                     _state.value = _state.value.copy(opening = false, message = error.message)
@@ -89,7 +86,6 @@ class BoxDetailViewModel(
     }
 
     fun dismissReveal() {
-        android.util.Log.d("BoxDetailVM", "dismissReveal()")
         _state.value = _state.value.copy(reveal = null)
     }
 
