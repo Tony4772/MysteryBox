@@ -313,7 +313,10 @@ private fun RevealOverlay(item: RevealItemDto, onDismiss: () -> Unit) {
     val isHighRarity = item.rarity.equals("Legendary", true) || item.rarity.equals("Epic", true)
 
     var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { visible = true }
+    LaunchedEffect(Unit) {
+        android.util.Log.d("BoxDetailVM", "RevealOverlay shown for ${item.name}")
+        visible = true
+    }
 
     val scale by animateFloatAsState(
         targetValue = if (visible) 1f else 0.6f,
