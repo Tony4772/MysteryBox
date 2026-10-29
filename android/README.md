@@ -65,7 +65,7 @@ app/src/main/java/com/ebyzom/mysterybox/
 
 ## Fase 2 (no incluido)
 
-- Compra de creditos: los endpoints actuales son simulados. Requiere Stripe PaymentSheet o MercadoPago Checkout Bricks en la app y Payment Intents reales (con webhook) en el backend.
+- Compra de creditos: la web ya cobra con Culqi (Checkout v4 + Charges API). En la app falta la pantalla de compra; en Google Play los creditos digitales deben venderse con Google Play Billing, no con Culqi directamente.
 - Billetera con historial de transacciones
 - Panel de administracion (recomendado mantenerlo en la web)
 - Imagenes reales de los objetos (hoy se usan emojis)

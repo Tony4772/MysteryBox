@@ -122,7 +122,7 @@ fun ProfileScreen(user: UserDto, onLogout: () -> Unit) {
 
         Spacer(Modifier.height(20.dp))
         Text(
-            text = "Comprar creditos (Stripe / MercadoPago) y el panel de administracion estan en la proxima fase. Por ahora se gestionan desde la web.",
+            text = "Comprar creditos con Culqi y el panel de administracion estan en la proxima fase. Por ahora se gestionan desde la web.",
             style = MaterialTheme.typography.bodySmall,
             color = TextSecondary,
             textAlign = TextAlign.Center,

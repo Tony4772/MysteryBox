@@ -53,8 +53,8 @@ class ApiClient {
 
   payments = {
     plans: () => this.get("/payments/plans"),
-    checkoutStripe: (planId) => this.post("/payments/checkout/stripe", { planId }),
-    checkoutMP: (planId) => this.post("/payments/checkout/mercadopago", { planId }),
+    createOrder: (planId) => this.post("/payments/checkout/culqi", { planId }),
+    confirmCulqi: (transactionId, token) => this.post("/payments/confirm/culqi", { transactionId, token }),
   };
 
   admin = {

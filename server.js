@@ -25,10 +25,11 @@ async function start() {
   // Public routes
   app.use("/api/auth", authRoutes);
 
-  // Payment webhooks (no auth required - must come first)
-  app.post("/api/payments/webhook/stripe", paymentRoutes.handleStripeWebhook);
-  app.post("/api/payments/webhook/mercadopago", paymentRoutes.handleMPWebhook);
-  app.get("/api/payments/plans", (req, res) => paymentRoutes.handlePlans ? paymentRoutes.handlePlans(req, res) : res.json({ plans: require("./payment_config").plans }));
+  // Plans are public so the landing/wallet can render before login
+  app.get("/api/payments/plans", (req, res) => {
+    const config = require("./payment_config");
+    res.json({ plans: config.plans, currency: config.culqi.currency, provider: "culqi" });
+  });
 
   // Protected routes
   app.use("/api/wallet", authMiddleware, walletRoutes);

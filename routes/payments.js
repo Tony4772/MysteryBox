@@ -1,105 +1,122 @@
 const express = require("express");
-const { get, all, run } = require("../database/db");
+const { get, run } = require("../database/db");
 const paymentConfig = require("../payment_config");
 
 const router = express.Router();
+const culqi = paymentConfig.culqi;
+
+function planAmount(plan) {
+  return Math.round(plan.price * 100);
+}
 
 router.get("/plans", (req, res) => {
-  res.json({ plans: paymentConfig.plans });
+  res.json({ plans: paymentConfig.plans, currency: culqi.currency, provider: "culqi" });
 });
 
-router.post("/checkout/stripe", async (req, res) => {
+router.post("/checkout/culqi", async (req, res) => {
   try {
-    if (!paymentConfig.stripe.enabled) {
-      return res.status(400).json({ error: "Stripe no está habilitado" });
+    if (!culqi.isConfigured()) {
+      return res.status(503).json({
+        error: "Los pagos aún no están configurados. Falta CULQI_PUBLIC_KEY y CULQI_SECRET_KEY en el archivo .env",
+      });
     }
-    const { planId } = req.body;
+
+    const { planId } = req.body || {};
     const plan = paymentConfig.plans.find((p) => p.id === planId);
     if (!plan) return res.status(400).json({ error: "Plan no encontrado" });
 
+    const amount = planAmount(plan);
     const result = await run(
-      "INSERT INTO transactions (user_id, type, amount, description, provider, status) VALUES (?, 'deposit', ?, ?, 'stripe', 'pending')",
-      [req.user.id, Math.round(plan.price * 100), `Buy ${plan.credits} credits (${plan.label})`]
+      "INSERT INTO transactions (user_id, type, amount, description, provider, status) VALUES (?, 'deposit', ?, ?, 'culqi', 'pending')",
+      [req.user.id, amount, `Compra de ${plan.credits} créditos (${plan.label})`]
     );
 
     res.json({
-      clientSecret: `pi_demo_${result.lastInsertRowid}`,
       transactionId: result.lastInsertRowid,
+      amount,
+      currency: culqi.currency,
+      description: `MysteryBox - ${plan.label} (${plan.credits} créditos)`,
+      publicKey: culqi.publicKey,
       plan,
-      message: "Integra Stripe Checkout o Payment Intents aquí con tu publishableKey",
     });
   } catch (err) {
+    console.error("checkout culqi:", err);
     res.status(500).json({ error: "Error del servidor" });
   }
 });
 
-router.post("/checkout/mercadopago", async (req, res) => {
+router.post("/confirm/culqi", async (req, res) => {
   try {
-    if (!paymentConfig.mercadopago.enabled) {
-      return res.status(400).json({ error: "MercadoPago no está habilitado" });
+    if (!culqi.isConfigured()) {
+      return res.status(503).json({ error: "Los pagos aún no están configurados" });
     }
-    const { planId } = req.body;
-    const plan = paymentConfig.plans.find((p) => p.id === planId);
-    if (!plan) return res.status(400).json({ error: "Plan no encontrado" });
 
-    const result = await run(
-      "INSERT INTO transactions (user_id, type, amount, description, provider, status) VALUES (?, 'deposit', ?, ?, 'mercadopago', 'pending')",
-      [req.user.id, Math.round(plan.price * 100), `Buy ${plan.credits} credits (${plan.label})`]
-    );
+    const { transactionId, token } = req.body || {};
+    if (typeof token !== "string" || !token.startsWith("tkn_")) {
+      return res.status(400).json({ error: "Token de pago inválido" });
+    }
 
+    const tx = await get("SELECT * FROM transactions WHERE id = ? AND user_id = ?", [
+      transactionId,
+      req.user.id,
+    ]);
+    if (!tx) return res.status(404).json({ error: "Orden de pago no encontrada" });
+
+    if (tx.status === "completed") {
+      const user = await get("SELECT credits FROM users WHERE id = ?", [req.user.id]);
+      return res.json({ success: true, alreadyProcessed: true, newBalance: user.credits });
+    }
+
+    const plan = paymentConfig.plans.find((p) => planAmount(p) === tx.amount);
+    if (!plan) return res.status(500).json({ error: "Plan no encontrado para esta orden" });
+
+    const user = await get("SELECT email FROM users WHERE id = ?", [req.user.id]);
+
+    const chargeResponse = await fetch(`${culqi.apiBase}/charges`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${culqi.secretKey}`,
+      },
+      body: JSON.stringify({
+        amount: tx.amount,
+        currency_code: culqi.currency,
+        email: user.email,
+        source_id: token,
+        description: tx.description,
+        metadata: {
+          transaction_id: String(tx.id),
+          user_id: String(req.user.id),
+          plan_id: plan.id,
+        },
+      }),
+    });
+
+    const charge = await chargeResponse.json().catch(() => ({}));
+    if (!chargeResponse.ok || charge.paid !== true) {
+      const message =
+        charge.user_message || charge.merchant_message || "El pago fue rechazado por Culqi";
+      console.warn("culqi charge rejected:", chargeResponse.status, charge.type || charge);
+      return res.status(402).json({ error: message });
+    }
+
+    await run("UPDATE transactions SET status = 'completed', provider_tx_id = ? WHERE id = ?", [
+      charge.id || null,
+      tx.id,
+    ]);
+    await run("UPDATE users SET credits = credits + ? WHERE id = ?", [plan.credits, req.user.id]);
+
+    const updated = await get("SELECT credits FROM users WHERE id = ?", [req.user.id]);
     res.json({
-      init_point: `https://www.mercadopago.com.ar/checkout/v1/redirect?pref_id=demo_${result.lastInsertRowid}`,
-      transactionId: result.lastInsertRowid,
-      plan,
-      message: "Integra MercadoPago Preference SDK aquí con tu accessToken",
+      success: true,
+      newBalance: updated.credits,
+      credits: plan.credits,
+      chargeId: charge.id,
     });
   } catch (err) {
-    res.status(500).json({ error: "Error del servidor" });
+    console.error("confirm culqi:", err);
+    res.status(502).json({ error: "No se pudo completar el pago. Inténtalo de nuevo." });
   }
 });
-
-async function handleStripeWebhook(req, res) {
-  try {
-    const event = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    if (event.type === "payment_intent.succeeded") {
-      const txId = event.data.object?.metadata?.transaction_id;
-      if (txId) {
-        const tx = await get("SELECT * FROM transactions WHERE id = ? AND status = 'pending'", [txId]);
-        if (tx) {
-          const plan = paymentConfig.plans.find((p) => Math.round(p.price * 100) === tx.amount);
-          const creditsToAdd = plan ? plan.credits : Math.floor(tx.amount / 100);
-          await run("UPDATE transactions SET status = 'completed' WHERE id = ?", [txId]);
-          await run("UPDATE users SET credits = credits + ? WHERE id = ?", [creditsToAdd, tx.user_id]);
-        }
-      }
-    }
-    res.json({ received: true });
-  } catch (err) {
-    res.status(500).json({ error: "Webhook error" });
-  }
-}
-
-async function handleMPWebhook(req, res) {
-  try {
-    const { type, data } = req.body;
-    if (type === "payment") {
-      const txId = data?.id;
-      if (txId) {
-        const tx = await get("SELECT * FROM transactions WHERE (provider_tx_id = ? OR id = ?) AND status = 'pending'", [String(txId), txId]);
-        if (tx) {
-          const plan = paymentConfig.plans.find((p) => Math.round(p.price * 100) === tx.amount);
-          const creditsToAdd = plan ? plan.credits : Math.floor(tx.amount / 100);
-          await run("UPDATE transactions SET status = 'completed' WHERE id = ?", [tx.id]);
-          await run("UPDATE users SET credits = credits + ? WHERE id = ?", [creditsToAdd, tx.user_id]);
-        }
-      }
-    }
-    res.json({ received: true });
-  } catch (err) {
-    res.status(500).json({ error: "Webhook error" });
-  }
-}
 
 module.exports = router;
-module.exports.handleStripeWebhook = handleStripeWebhook;
-module.exports.handleMPWebhook = handleMPWebhook;

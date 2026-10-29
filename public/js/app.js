@@ -62,7 +62,7 @@ async function logout() {
 }
 
 function formatCredits(n) { return n.toLocaleString(); }
-function formatMoney(n) { return `$${(n / 100).toFixed(2)}`; }
+function formatMoney(n) { return `S/ ${(n / 100).toFixed(2)}`; }
 
 function toggleAudio() {
   ensureAudio();
@@ -735,7 +735,7 @@ async function loadWallet() {
         ${p.badge ? `<div class="plan-badge">${p.badge}</div>` : ""}
         <div class="plan-label">${p.label}</div>
         <div class="plan-credits">\u{1F48E} ${p.credits.toLocaleString()}</div>
-        <div class="plan-price">$${p.price} <span>USD</span></div>
+        <div class="plan-price">S/ ${Number(p.price).toFixed(2)} <span>PEN</span></div>
         <button class="btn ${p.badge ? 'btn-gold' : 'btn-primary'} btn-block" onclick="buyPlan('${p.id}')">
           Comprar Ahora
         </button>
@@ -770,25 +770,93 @@ async function loadWallet() {
   } catch (err) { showToast(err.message, "error"); }
 }
 
+let pendingCulqiOrder = null;
+
 async function buyPlan(planId) {
   try {
-    const result = await api.payments.checkoutStripe(planId);
-    openModal(`
-      <button class="modal-close" onclick="closeModal()">&times;</button>
-      <div style="text-align:center">
-        <div style="font-size:3rem;margin-bottom:16px">\u{1F4B3}</div>
-        <div class="modal-title">Pasarela de Pago</div>
-        <p style="color:var(--text-secondary);margin-bottom:8px">Plan: <strong>${result.plan.label}</strong></p>
-        <p style="color:var(--text-secondary);margin-bottom:8px">Precio: <strong>$${result.plan.price}</strong></p>
-        <p style="color:var(--text-secondary);margin-bottom:24px">Cr\u00E9ditos: <strong>\u{1F48E} ${result.plan.credits}</strong></p>
-        <p style="color:var(--text-secondary);font-size:0.8rem;margin-bottom:20px;background:var(--bg-input);padding:12px;border-radius:8px;text-align:left">
-          ${result.message}
-        </p>
-        <button class="btn btn-primary btn-block" onclick="closeModal()">Entendido</button>
-      </div>
-    `);
+    const order = await api.payments.createOrder(planId);
+    pendingCulqiOrder = order;
+    openCulqiCheckout(order);
   } catch (err) { showToast(err.message, "error"); }
 }
+
+function openCulqiCheckout(order) {
+  if (typeof Culqi === "undefined") {
+    pendingCulqiOrder = null;
+    showToast("No se pudo cargar la pasarela de pagos. Revisa tu conexión e inténtalo de nuevo.", "error");
+    return;
+  }
+  Culqi.publicKey = order.publicKey;
+  Culqi.settings({
+    title: "MysteryBox",
+    currency: order.currency,
+    description: order.description,
+    amount: order.amount,
+  });
+  Culqi.options({
+    lang: "es",
+    installments: false,
+    paymentMethods: {
+      tarjeta: true,
+      yape: true,
+      bancaMovil: false,
+      agente: false,
+      billetera: false,
+      cuotealo: false,
+    },
+    style: {
+      logo: "https://static.culqi.com/v2/v2/static/img/logo.png",
+      maincolor: "#7c5cfc",
+      buttonBackground: "#7c5cfc",
+      buttonText: "Pagar",
+      buttonTextColor: "#ffffff",
+      priceColor: "#eaeaf2",
+    },
+  });
+  Culqi.open();
+}
+
+window.culqi = async function () {
+  if (Culqi.token) {
+    const token = Culqi.token.id;
+    Culqi.close();
+    const order = pendingCulqiOrder;
+    pendingCulqiOrder = null;
+    if (!order) return;
+
+    openModal(`
+      <div style="text-align:center;padding:20px">
+        <div class="spinner" style="margin:0 auto 20px"></div>
+        <div class="modal-title">Procesando pago</div>
+        <p style="color:var(--text-secondary)">Estamos confirmando tu pago con Culqi. No cierres esta ventana.</p>
+      </div>
+    `);
+
+    try {
+      const res = await api.payments.confirmCulqi(order.transactionId, token);
+      currentUser.credits = res.newBalance;
+      document.getElementById("navCredits").textContent = formatCredits(res.newBalance);
+      audio.reveal("Epic");
+      openModal(`
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+        <div style="text-align:center">
+          <div style="font-size:3rem;margin-bottom:16px">\u2705</div>
+          <div class="modal-title">\u00A1Pago aprobado!</div>
+          <p style="color:var(--text-secondary);margin-bottom:8px">Se agregaron <strong>\u{1F48E} ${res.credits}</strong> cr\u00E9ditos a tu cuenta.</p>
+          <p style="color:var(--text-secondary);margin-bottom:24px">Saldo actual: <strong>\u{1F48E} ${formatCredits(res.newBalance)}</strong></p>
+          <button class="btn btn-primary btn-block" onclick="closeModal(); if (currentPage === 'wallet') render();">\u00A1Genial!</button>
+        </div>
+      `);
+    } catch (err) {
+      closeModal();
+      showToast(err.message, "error");
+    }
+  } else if (Culqi.order) {
+    showToast("Este método de pago no está disponible todavía. Usa tarjeta o Yape.", "error");
+  } else if (Culqi.error) {
+    showToast(Culqi.error.user_message || Culqi.error.merchant_message || "Pago cancelado", "error");
+  }
+};
 
 // ─── ADMIN ───
 function renderAdminPage() {
